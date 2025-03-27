@@ -1,11 +1,20 @@
 const Cart = require("../models/Cart");
 const Product = require("../models/Product");
+const { v4: uuidv4 } = require('uuid');
 
-// ✅ Get User Cart
+// ✅ Generate sessionId
+exports.createSession = (req, res) => {
+  const sessionId = uuidv4();
+  res.status(200).json({ sessionId });
+};
+
+// ✅ Get Cart using sessionId
 exports.getCart = async (req, res) => {
   try {
-    const cart = await Cart.findOne({ user: req.user.id }).populate("products.product", "name price");
-    if (!cart) return res.status(200).json({ message: "Cart is empty", products: [] });
+    const { sessionId } = req.params;
+    const cart = await Cart.findOne({ sessionId }).populate("items.productId", "name price");
+
+    if (!cart) return res.status(200).json({ message: "Cart is empty", items: [] });
 
     res.status(200).json(cart);
   } catch (error) {
@@ -13,48 +22,47 @@ exports.getCart = async (req, res) => {
   }
 };
 
-// ✅ Add to Cart
+// ✅ Add to Cart using sessionId
 exports.addToCart = async (req, res) => {
-    try {
-      const { productId, quantity } = req.body;
-      const product = await Product.findById(productId);
-      if (!product) return res.status(404).json({ message: "Product not found" });
-  
-      let cart = await Cart.findOne({ user: req.user.id });
-  
-      if (!cart) {
-        cart = new Cart({ user: req.user.id, products: [] });
-      }
-  
-      const existingItem = cart.products.find((item) => item.product.toString() === productId);
-      if (existingItem) {
-        existingItem.quantity += quantity;
-      } else {
-        cart.products.push({ product: productId, quantity });
-      }
-  
-      cart.totalPrice = cart.products.reduce((total, item) => total + item.quantity * product.price, 0);
-      await cart.save();
-  
-      // ✅ Emit event for real-time cart update
-      req.app.get("io").emit("cartUpdated", cart);
-  
-      res.status(200).json(cart);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to add item to cart", error: error.message });
-    }
-  };
+  try {
+    const { sessionId, productId, quantity, variation, price } = req.body;
+    const product = await Product.findById(productId);
+    if (!product) return res.status(404).json({ message: "Product not found" });
 
-// ✅ Remove an Item from Cart
+    let cart = await Cart.findOne({ sessionId });
+
+    if (!cart) {
+      cart = new Cart({ sessionId, items: [] });
+    }
+
+    const existingItem = cart.items.find((item) =>
+      item.productId.toString() === productId && item.variation === variation
+    );
+
+    if (existingItem) {
+      existingItem.quantity += quantity;
+    } else {
+      cart.items.push({ productId, variation, quantity, price });
+    }
+
+    await cart.save();
+    res.status(200).json(cart);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to add item to cart", error: error.message });
+  }
+};
+
+// ✅ Remove Item using sessionId
 exports.removeFromCart = async (req, res) => {
   try {
+    const { sessionId } = req.body;
     const { productId } = req.params;
-    let cart = await Cart.findOne({ user: req.user.id });
+
+    let cart = await Cart.findOne({ sessionId });
 
     if (!cart) return res.status(404).json({ message: "Cart not found" });
 
-    cart.products = cart.products.filter((item) => item.product.toString() !== productId);
-    cart.totalPrice = cart.products.reduce((total, item) => total + item.quantity * item.product.price, 0);
+    cart.items = cart.items.filter((item) => item.productId.toString() !== productId);
 
     await cart.save();
     res.status(200).json({ message: "Item removed", cart });
@@ -63,10 +71,11 @@ exports.removeFromCart = async (req, res) => {
   }
 };
 
-// ✅ Clear Cart
+// ✅ Clear Cart using sessionId
 exports.clearCart = async (req, res) => {
   try {
-    await Cart.findOneAndDelete({ user: req.user.id });
+    const { sessionId } = req.body;
+    await Cart.findOneAndDelete({ sessionId });
     res.status(200).json({ message: "Cart cleared" });
   } catch (error) {
     res.status(500).json({ message: "Failed to clear cart", error: error.message });

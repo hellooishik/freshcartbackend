@@ -1,19 +1,21 @@
 const express = require("express");
-const { addToCart, getCart, removeFromCart, clearCart } = require("../controllers/cartController");
-const { protect } = require("../middleware/authMiddleware");
+const { addToCart, getCart, removeFromCart, clearCart, createSession } = require("../controllers/cartController");
 
 const router = express.Router();
 
-// ✅ Get user's cart
-router.get("/", protect, getCart);
+// ✅ Generate session ID
+router.get("/session", createSession);
 
-// ✅ Add item to cart
-router.post("/add", protect, addToCart);
+// ✅ Get user's cart using sessionId
+router.get("/", getCart);
 
-// ✅ Remove an item from cart
-router.delete("/remove/:productId", protect, removeFromCart);
+// ✅ Add item to cart using sessionId
+router.post("/add", addToCart);
 
-// ✅ Clear the entire cart
-router.delete("/clear", protect, clearCart);
+// ✅ Remove an item from cart using sessionId
+router.delete("/remove/:productId", removeFromCart);
+
+// ✅ Clear the entire cart using sessionId
+router.delete("/clear", clearCart);
 
 module.exports = router;
