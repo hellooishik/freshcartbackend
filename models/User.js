@@ -12,7 +12,7 @@ const UserSchema = new mongoose.Schema(
     name: {
       type: String,
       trim: true,
-      default: null, // ✅ Name is now optional
+      default: null,
     },
     email: {
       type: String,
@@ -22,7 +22,7 @@ const UserSchema = new mongoose.Schema(
       trim: true,
       validate: {
         validator: function (v) {
-          return !v || /\S+@\S+\.\S+/.test(v); // ✅ Validates only if email exists
+          return !v || /\S+@\S+\.\S+/.test(v);
         },
         message: "Invalid email address",
       },
@@ -31,6 +31,11 @@ const UserSchema = new mongoose.Schema(
       type: String,
       minlength: [6, "Password must be at least 6 characters long"],
       select: false,
+      default: null, // ✅ For Google-auth users
+    },
+    googleId: {
+      type: String,
+      default: null, // ✅ Optional Google ID
     },
     role: {
       type: String,

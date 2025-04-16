@@ -11,12 +11,28 @@ exports.createSession = (req, res) => {
 // ✅ Get Cart using sessionId
 exports.getCart = async (req, res) => {
   try {
-    const { sessionId } = req.params;
-    const cart = await Cart.findOne({ sessionId }).populate("items.productId", "name price");
+    const { sessionId } = req.query;
 
-    if (!cart) return res.status(200).json({ message: "Cart is empty", items: [] });
+    const cart = await Cart.findOne({ sessionId }).populate("items.productId");
 
-    res.status(200).json(cart);
+    if (!cart || cart.items.length === 0) {
+      return res.status(200).json({ message: "Cart is empty", products: [], totalPrice: 0 });
+    }
+
+    const products = cart.items.map(item => ({
+      productId: item.productId, // already populated with full product data
+      quantity: item.quantity,
+      variation: item.variation,
+      price: item.price,
+    }));
+
+    const totalPrice = products.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+
+    res.status(200).json({
+      products,
+      totalPrice,
+    });
+
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch cart", error: error.message });
   }

@@ -1,75 +1,73 @@
 const express = require("express");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
-const { generateOTP } = require("../utils/otp");
-const twilio = require("twilio");
+const bcrypt = require("bcryptjs");
 
 const router = express.Router();
 
-// Initialize Twilio
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+// Generate JWT Token
+const generateToken = (user) => {
+  return jwt.sign({ user: { id: user._id } }, process.env.JWT_SECRET, {
+    expiresIn: "1d",
+  });
+};
 
-// ✅ Request OTP Route
-router.post("/send-otp", async (req, res) => {
-  const { phoneNumber } = req.body;
-
-  if (!phoneNumber) return res.status(400).json({ msg: "Phone number is required" });
-
+// Register User
+router.post("/register", async (req, res) => {
   try {
-    let user = await User.findOne({ phoneNumber });
+    let { name, email, password } = req.body;
+    email = email.toLowerCase(); // Normalize
 
-    // Register if user doesn't exist
-    if (!user) {
-      user = new User({ phoneNumber });
-      await user.save();
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ message: "User already exists" });
     }
 
-    // Generate OTP
-    const otp = generateOTP();
-    user.otp = otp;
-    user.otpExpiry = Date.now() + 10 * 60 * 1000; // OTP valid for 10 minutes
-    await user.save();
+    user = await User.create({ name, email, password });
 
-    // Send OTP using Twilio
-    await client.messages.create({
-      body: `Your OTP is ${otp}`,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: phoneNumber,
+    res.status(201).json({
+      message: "Registration successful",
+      token: generateToken(user),
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
     });
-
-    res.json({ msg: "OTP sent successfully" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ msg: "Failed to send OTP" });
+  } catch (error) {
+    console.error("Register error:", error);
+    res.status(500).json({ message: "Server error", error });
   }
 });
 
-// ✅ Verify OTP Route
-router.post("/verify-otp", async (req, res) => {
-  const { phoneNumber, otp } = req.body;
-
-  if (!phoneNumber || !otp) return res.status(400).json({ msg: "Phone number and OTP are required" });
-
+// Login User
+router.post("/login", async (req, res) => {
   try {
-    const user = await User.findOne({ phoneNumber });
+    let { email, password } = req.body;
+    email = email.toLowerCase(); // Normalize
 
-    if (!user || user.otp !== otp || Date.now() > user.otpExpiry) {
-      return res.status(400).json({ msg: "Invalid or expired OTP" });
+    const user = await User.findOne({ email }).select("+password");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // Clear OTP after verification
-    user.otp = null;
-    user.otpExpiry = null;
-    await user.save();
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
 
-    // Generate JWT
-    const payload = { user: { id: user.id } };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
-
-    res.json({ token, msg: "OTP verified successfully" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ msg: "Server error" });
+    res.json({
+      message: "Login successful",
+      token: generateToken(user),
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Server error", error });
   }
 });
 

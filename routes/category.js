@@ -15,45 +15,87 @@ if (!fs.existsSync(uploadDir)) {
 // Configure Multer for image uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, uploadDir); // Save directly to uploads
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         cb(null, `${Date.now()}-${file.originalname}`);
     },
 });
-
 const upload = multer({ storage });
 
 // Serve images statically
-router.use('/uploads', express.static(uploadDir));
+router.use("/uploads", express.static(uploadDir));
 
-// Create Category with Image Upload
+/**
+ * @route   POST /api/category/
+ * @desc    Create a new category
+ */
 router.post("/", upload.single("image"), async (req, res) => {
     try {
-        const { name, description } = req.body;
+        const { name, description, features } = req.body;
 
-        if (!req.file) {
-            return res.status(400).json({ msg: "Image is required" });
-        }
+        if (!name) return res.status(400).json({ msg: "Name is required" });
+        if (!req.file) return res.status(400).json({ msg: "Image is required" });
 
-        const imageUrl = `/uploads/${req.file.filename}`; // Relative path for API response
+        const imageUrl = `/uploads/${req.file.filename}`;
+        const parsedFeatures = Array.isArray(features) ? features : JSON.parse(features || "[]");
 
-        const category = new Category({ name, description, image: imageUrl });
-        await category.save();
-        res.status(201).json(category);
+        const newCategory = new Category({
+            name,
+            description,
+            features: parsedFeatures,
+            image: imageUrl,
+        });
+
+        await newCategory.save();
+        res.status(201).json({ msg: "Category created", category: newCategory });
     } catch (err) {
         console.error("🔥 Error creating category:", err);
         res.status(500).json({ msg: "Server error", error: err.message });
     }
 });
 
-// Get All Categories
+/**
+ * @route   GET /api/category/
+ * @desc    Get all categories
+ */
 router.get("/", async (req, res) => {
     try {
         const categories = await Category.find();
-        res.json(categories);
+        res.status(200).json(categories);
     } catch (err) {
         console.error("🔥 Error fetching categories:", err);
+        res.status(500).json({ msg: "Server error", error: err.message });
+    }
+});
+
+/**
+ * @route   PUT /api/category/:id
+ * @desc    Edit a category
+ */
+router.put("/:id", upload.single("image"), async (req, res) => {
+    try {
+        const { name, description, features } = req.body;
+        const updateData = {};
+
+        if (name) updateData.name = name;
+        if (description) updateData.description = description;
+        if (features) {
+            updateData.features = Array.isArray(features) ? features : JSON.parse(features || "[]");
+        }
+        if (req.file) {
+            updateData.image = `/uploads/${req.file.filename}`;
+        }
+
+        const updatedCategory = await Category.findByIdAndUpdate(req.params.id, updateData, { new: true });
+
+        if (!updatedCategory) {
+            return res.status(404).json({ msg: "Category not found" });
+        }
+
+        res.json({ msg: "Category updated successfully", category: updatedCategory });
+    } catch (err) {
+        console.error("🔥 Error updating category:", err);
         res.status(500).json({ msg: "Server error", error: err.message });
     }
 });

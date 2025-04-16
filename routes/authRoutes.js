@@ -1,66 +1,73 @@
 const express = require("express");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
-const admin = require("../models/adminsdk"); // Firebase Admin SDK
+const bcrypt = require("bcryptjs");
+
 const router = express.Router();
 
-// ✅ Send OTP using Firebase
-router.post("/send-otp", async (req, res) => {
-  const { phoneNumber } = req.body;
+// Generate JWT Token
+const generateToken = (user) => {
+  return jwt.sign({ user: { id: user._id } }, process.env.JWT_SECRET, {
+    expiresIn: "1d",
+  });
+};
 
-  if (!phoneNumber) return res.status(400).json({ msg: "Phone number is required" });
-
+// Register User
+router.post("/register", async (req, res) => {
   try {
-    let user = await User.findOne({ phoneNumber });
+    let { name, email, password } = req.body;
+    email = email.toLowerCase(); // Normalize
 
-    if (!user) {
-      user = new User({ phoneNumber });
-      await user.save();
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ message: "User already exists" });
     }
-    // the mian module is been set to the main f
 
-    // Create a Firebase session for OTP verification
-    const sessionInfo = await admin.auth().createSessionCookie(phoneNumber, {
-      expiresIn: 600000, // 10 minutes
+    user = await User.create({ name, email, password });
+
+    res.status(201).json({
+      message: "Registration successful",
+      token: generateToken(user),
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
     });
-
-    res.json({ msg: "OTP sent successfully", sessionInfo });
-  } catch (err) {
-    console.error("Error in /send-otp:", err);
-    res.status(500).json({ msg: "Failed to send OTP" });
+  } catch (error) {
+    console.error("Register error:", error);
+    res.status(500).json({ message: "Server error", error });
   }
 });
 
-// ✅ Verify OTP using Firebase
-router.post("/verify-otp", async (req, res) => {
-  const { phoneNumber, otp, sessionInfo } = req.body;
-
-  if (!phoneNumber || !otp || !sessionInfo) {
-    return res.status(400).json({ msg: "Phone number, OTP, and session info are required" });
-  }
-
+// Login User
+router.post("/login", async (req, res) => {
   try {
-    const decodedClaims = await admin.auth().verifySessionCookie(sessionInfo);
+    let { email, password } = req.body;
+    email = email.toLowerCase(); // Normalize
 
-    if (!decodedClaims || decodedClaims.phone_number !== phoneNumber) {
-      return res.status(400).json({ msg: "Invalid or expired session" });
-    }
-
-    // Simulating OTP verification (Firebase handles it in the frontend)
-    const user = await User.findOne({ phoneNumber });
-
+    const user = await User.findOne({ email }).select("+password");
     if (!user) {
-      return res.status(400).json({ msg: "User not found" });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // Generate JWT token
-    const payload = { user: { id: user.id } };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
 
-    res.json({ token, msg: "OTP verified successfully" });
-  } catch (err) {
-    console.error("Error in /verify-otp:", err);
-    res.status(500).json({ msg: "Server error" });
+    res.json({
+      message: "Login successful",
+      token: generateToken(user),
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Server error", error });
   }
 });
 
